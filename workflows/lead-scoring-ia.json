@@ -1,0 +1,1014 @@
+{
+  "updatedAt": "2026-02-08T16:25:27.726Z",
+  "createdAt": "2026-02-08T16:25:27.726Z",
+  "id": "dDFBPCP4qLT9Jzwn",
+  "name": "Lead Scoring IA",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-scoring",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Lead Entrant",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "lead-scoring-webhook"
+    },
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "action": "read",
+        "forceReconnect": "",
+        "options": {}
+      },
+      "id": "imap-trigger",
+      "name": "Email Entrant (IMAP)",
+      "type": "n8n-nodes-base.imapEmail",
+      "typeVersion": 2,
+      "position": [
+        200,
+        560
+      ],
+      "credentials": {
+        "imap": {
+          "name": "IMAP Email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliser les donnees du webhook\n// Format attendu: {prenom, nom, email, entreprise, message, source}\nconst data = $input.first().json;\n\ntry {\n  // Gestion flexible des noms de champs (minuscule, majuscule, camelCase)\n  const prenom = data.prenom || data.Prenom || data.firstName || data.first_name || '';\n  const nom = data.nom || data.Nom || data.lastName || data.last_name || '';\n  const email = data.email || data.Email || '';\n  const entreprise = data.entreprise || data.Entreprise || data.company || data.societe || '';\n  const message = data.message || data.Message || data.description || data.body || '';\n  const source = data.source || data.Source || 'Formulaire';\n\n  // Validation minimale\n  if (!email) {\n    throw new Error('Email manquant dans les donnees du webhook');\n  }\n\n  return [{\n    json: {\n      Prenom: prenom.trim(),\n      Nom: nom.trim(),\n      Email: email.trim().toLowerCase(),\n      Entreprise: entreprise.trim(),\n      Message: message.trim(),\n      Source: source,\n      RecuLe: new Date().toISOString()\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      error: true,\n      errorMessage: error.message,\n      rawData: JSON.stringify(data)\n    }\n  }];\n}"
+      },
+      "id": "normalize-webhook",
+      "name": "Normaliser Donnees Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraire les infos lead depuis un email entrant\nconst email = $input.first().json;\n\ntry {\n  const fromEmail = email.from?.value?.[0]?.address || email.from || '';\n  const fromName = email.from?.value?.[0]?.name || '';\n  const subject = email.subject || '';\n  const body = email.text || email.html || '';\n\n  // Extraire prenom/nom depuis le nom de l'expediteur\n  const nameParts = fromName.split(' ');\n  const prenom = nameParts[0] || '';\n  const nom = nameParts.slice(1).join(' ') || '';\n\n  // Deviner l'entreprise depuis le domaine email\n  const domain = fromEmail.split('@')[1] || '';\n  const isPersonalEmail = ['gmail.com','hotmail.com','yahoo.com','outlook.com','live.com','icloud.com','gmx.com'].includes(domain);\n  const entreprise = isPersonalEmail ? '' : domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);\n\n  return [{\n    json: {\n      Prenom: prenom.trim(),\n      Nom: nom.trim(),\n      Email: fromEmail.trim().toLowerCase(),\n      Entreprise: entreprise,\n      Message: (subject + '\\n' + body).substring(0, 2000).trim(),\n      Source: 'Email',\n      RecuLe: new Date().toISOString()\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      error: true,\n      errorMessage: 'Erreur parsing email: ' + error.message,\n      rawData: JSON.stringify(email).substring(0, 500)\n    }\n  }];\n}"
+      },
+      "id": "normalize-email",
+      "name": "Normaliser Donnees Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'accepted', message: 'Lead recu et en cours de traitement', timestamp: new Date().toISOString() }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "webhook-response",
+      "name": "Repondre 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://person.clearbit.com/v2/combined/find?email={{ $json.Email }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        },
+        "onError": "continueRegularOutput"
+      },
+      "id": "clearbit-enrich",
+      "name": "Enrichir via Clearbit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        420
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Clearbit API Key"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Traiter la reponse Clearbit avec fallback si erreur\nconst input = $input.first().json;\nconst formData = $('Normaliser Donnees Webhook').first()?.json || $('Normaliser Donnees Email').first()?.json || {};\n\ntry {\n  // Verifier si Clearbit a retourne une erreur\n  if (input.error || input.statusCode >= 400 || !input.person) {\n    // FALLBACK: utiliser les donnees brutes sans enrichissement\n    return [{\n      json: {\n        ...formData,\n        Secteur: 'Inconnu',\n        TailleEntreprise: 'Inconnue',\n        Localisation: 'Inconnue',\n        TitreFonction: 'Inconnu',\n        SiteWeb: '',\n        LinkedInUrl: '',\n        EnrichissementSource: 'aucun (Clearbit indisponible)',\n        EnrichissementOk: false\n      }\n    }];\n  }\n\n  // Extraire les donnees Clearbit\n  const person = input.person || {};\n  const company = input.company || {};\n\n  return [{\n    json: {\n      ...formData,\n      // Enrichissement personne\n      Prenom: person.name?.givenName || formData.Prenom,\n      Nom: person.name?.familyName || formData.Nom,\n      TitreFonction: person.employment?.title || 'Inconnu',\n      LinkedInUrl: person.linkedin?.handle ? 'https://linkedin.com/' + person.linkedin.handle : '',\n      // Enrichissement entreprise\n      Entreprise: company.name || formData.Entreprise,\n      Secteur: company.category?.industry || 'Inconnu',\n      TailleEntreprise: company.metrics?.employeesRange || 'Inconnue',\n      Localisation: company.geo?.country || 'Inconnue',\n      SiteWeb: company.domain || '',\n      CA_Estime: company.metrics?.estimatedAnnualRevenue || '',\n      // Meta\n      EnrichissementSource: 'Clearbit',\n      EnrichissementOk: true\n    }\n  }];\n} catch (error) {\n  // Fallback complet en cas d'erreur inattendue\n  return [{\n    json: {\n      ...formData,\n      Secteur: 'Inconnu',\n      TailleEntreprise: 'Inconnue',\n      Localisation: 'Inconnue',\n      TitreFonction: 'Inconnu',\n      SiteWeb: '',\n      LinkedInUrl: '',\n      EnrichissementSource: 'erreur: ' + error.message,\n      EnrichissementOk: false\n    }\n  }];\n}"
+      },
+      "id": "clearbit-fallback",
+      "name": "Traiter Enrichissement (+ Fallback)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Tu es un expert en qualification de leads B2B.\nAnalyse ce lead enrichi et retourne UNIQUEMENT un objet JSON valide avec ces champs :\n\n- \"score\": nombre entier de 0 a 100\n- \"segment\": \"PME\" ou \"Enterprise\"\n- \"intention\": \"achat\", \"info\" ou \"spam\"\n- \"resume\": resume en 1 phrase\n- \"priorite\": \"haute\", \"moyenne\" ou \"basse\"\n\nCriteres de scoring :\n- Email professionnel (domaine entreprise) : +20\n- Entreprise identifiable avec site web : +15\n- Taille entreprise > 50 employes : +15\n- Message detaille avec besoin concret : +25\n- Fonction decisionnaire (CEO, CTO, VP, Director) : +15\n- Source LinkedIn : +10\n- Secteur premium (tech, finance, sante) : +10\n\nPenalites :\n- Email personnel (gmail, hotmail) sans entreprise : -15\n- Message vide ou tres court (<20 chars) : -20\n- Contenu spam/marketing/phishing : score = 0, intention = spam\n- Aucune info entreprise : -10\n\nIMPORTANT: Si intention = spam, le score DOIT etre < 10.\nRetourne UNIQUEMENT le JSON."
+            },
+            {
+              "role": "user",
+              "content": "=Prenom: {{ $json.Prenom }}\nNom: {{ $json.Nom }}\nEmail: {{ $json.Email }}\nEntreprise: {{ $json.Entreprise }}\nFonction: {{ $json.TitreFonction }}\nSecteur: {{ $json.Secteur }}\nTaille entreprise: {{ $json.TailleEntreprise }}\nLocalisation: {{ $json.Localisation }}\nSite web: {{ $json.SiteWeb }}\nLinkedIn: {{ $json.LinkedInUrl }}\nSource: {{ $json.Source }}\nMessage: {{ $json.Message }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 500,
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "openai-scoring",
+      "name": "Scoring IA (OpenAI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        1220,
+        420
+      ],
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraire le score et les tags depuis la reponse OpenAI\nconst openaiResponse = $input.first().json;\n\n// Recuperer les donnees enrichies du node precedent\nlet enrichedData;\ntry {\n  enrichedData = $('Traiter Enrichissement (+ Fallback)').first().json;\n} catch (e) {\n  enrichedData = {};\n}\n\n// Parser la reponse OpenAI\nlet analysis;\ntry {\n  const content = openaiResponse.message?.content || openaiResponse.content || JSON.stringify(openaiResponse);\n  analysis = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (e) {\n  // Fallback si le parsing echoue\n  analysis = { score: 30, segment: 'PME', intention: 'info', resume: 'Analyse impossible', priorite: 'basse' };\n}\n\n// Normaliser le score entre 0 et 100\nconst score = Math.min(100, Math.max(0, parseInt(analysis.score) || 0));\nconst intention = analysis.intention || 'info';\n\n// Determiner la categorie de routing\nlet categorie;\nif (intention === 'spam') {\n  categorie = 'Spam';\n} else if (score > 80) {\n  categorie = 'Hot Lead';\n} else if (score >= 50) {\n  categorie = 'Nurturing';\n} else {\n  categorie = 'Newsletter';\n}\n\nreturn [{\n  json: {\n    // Donnees contact\n    Prenom: enrichedData.Prenom || '',\n    Nom: enrichedData.Nom || '',\n    Email: enrichedData.Email || '',\n    Entreprise: enrichedData.Entreprise || '',\n    Message: enrichedData.Message || '',\n    Source: enrichedData.Source || '',\n    RecuLe: enrichedData.RecuLe || new Date().toISOString(),\n    // Enrichissement\n    Secteur: enrichedData.Secteur || 'Inconnu',\n    TailleEntreprise: enrichedData.TailleEntreprise || 'Inconnue',\n    Localisation: enrichedData.Localisation || 'Inconnue',\n    TitreFonction: enrichedData.TitreFonction || 'Inconnu',\n    SiteWeb: enrichedData.SiteWeb || '',\n    LinkedInUrl: enrichedData.LinkedInUrl || '',\n    // Scoring IA\n    Score: score,\n    Segment: analysis.segment || 'PME',\n    Intention: intention,\n    Resume: analysis.resume || '',\n    Priorite: analysis.priorite || 'basse',\n    Categorie: categorie,\n    Date: new Date().toISOString().split('T')[0]\n  }\n}];"
+      },
+      "id": "extract-score",
+      "name": "Extraire Score et Tags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "filterGroups": {
+          "values": [
+            {
+              "filters": [
+                {
+                  "propertyName": "email",
+                  "operator": "EQ",
+                  "value": "={{ $json.Email }}"
+                }
+              ]
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "id": "hubspot-search",
+      "name": "Chercher Contact HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        420
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "name": "HubSpot Account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-contact-exists",
+      "name": "Contact Existe dans HubSpot ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        1940,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $('Chercher Contact HubSpot').first().json.results[0].id }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "lead_score",
+                "value": "={{ $('Extraire Score et Tags').first().json.Score }}"
+              },
+              {
+                "property": "lead_segment",
+                "value": "={{ $('Extraire Score et Tags').first().json.Segment }}"
+              },
+              {
+                "property": "lead_intention",
+                "value": "={{ $('Extraire Score et Tags').first().json.Intention }}"
+              },
+              {
+                "property": "lead_categorie",
+                "value": "={{ $('Extraire Score et Tags').first().json.Categorie }}"
+              },
+              {
+                "property": "lead_resume_ia",
+                "value": "={{ $('Extraire Score et Tags').first().json.Resume }}"
+              }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "id": "hubspot-update",
+      "name": "Mettre a Jour Contact HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        320
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "name": "HubSpot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "email": "={{ $('Extraire Score et Tags').first().json.Email }}",
+        "additionalFields": {
+          "firstName": "={{ $('Extraire Score et Tags').first().json.Prenom }}",
+          "lastName": "={{ $('Extraire Score et Tags').first().json.Nom }}",
+          "company": "={{ $('Extraire Score et Tags').first().json.Entreprise }}",
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "lead_score",
+                "value": "={{ $('Extraire Score et Tags').first().json.Score }}"
+              },
+              {
+                "property": "lead_segment",
+                "value": "={{ $('Extraire Score et Tags').first().json.Segment }}"
+              },
+              {
+                "property": "lead_intention",
+                "value": "={{ $('Extraire Score et Tags').first().json.Intention }}"
+              },
+              {
+                "property": "lead_categorie",
+                "value": "={{ $('Extraire Score et Tags').first().json.Categorie }}"
+              },
+              {
+                "property": "lead_resume_ia",
+                "value": "={{ $('Extraire Score et Tags').first().json.Resume }}"
+              }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "id": "hubspot-create",
+      "name": "Creer Contact HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        520
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "name": "HubSpot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recuperer les donnees scorees pour le routing\n// (Ce node sert de point de convergence apres create/update HubSpot)\nconst scoreData = $('Extraire Score et Tags').first().json;\nreturn [{ json: scoreData }];"
+      },
+      "id": "merge-for-routing",
+      "name": "Preparer Routing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Intention }}",
+                    "rightValue": "spam",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Spam"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Score }}",
+                    "rightValue": 80,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Hot Lead (>80)"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Score }}",
+                    "rightValue": 49,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gt"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.Score }}",
+                    "rightValue": 81,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Nurturing (50-80)"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Score }}",
+                    "rightValue": 50,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Newsletter (<50)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-routing",
+      "name": "Router selon Score",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2660,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log le spam detecte pour audit\nconst data = $input.first().json;\nreturn [{\n  json: {\n    action: 'SPAM_EXCLU',\n    email: data.Email,\n    score: data.Score,\n    raison: data.Resume,\n    date: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "spam-exclude",
+      "name": "Exclure Spam (Log)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2940,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "={{ /* REMPLACER */ '#leads-chauds' }}",
+        "text": "=:fire: *HOT LEAD (Score {{ $json.Score }}/100)* :fire:\n\n*Contact:* {{ $json.Prenom }} {{ $json.Nom }}\n*Email:* {{ $json.Email }}\n*Entreprise:* {{ $json.Entreprise }} ({{ $json.Segment }})\n*Fonction:* {{ $json.TitreFonction }}\n*Intention:* {{ $json.Intention }}\n*Source:* {{ $json.Source }}\n\n> {{ $json.Resume }}\n\n_Qualifie automatiquement par Lead Scoring IA_",
+        "otherOptions": {}
+      },
+      "id": "slack-hot-lead",
+      "name": "Notification Slack Hot Lead",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        2940,
+        320
+      ],
+      "credentials": {
+        "slackApi": {
+          "name": "Slack Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ /* REMPLACER PAR EMAIL COMMERCIAL */ 'commercial@votreentreprise.com' }}",
+        "subject": "🔥 Hot Lead (Score {{ $json.Score }}/100) - {{ $json.Prenom }} {{ $json.Nom }} | {{ $json.Entreprise }}",
+        "message": "<div style=\"font-family:Arial,sans-serif;max-width:600px;\">\n<h2 style=\"color:#e74c3c;\">🔥 Nouveau Hot Lead !</h2>\n<table style=\"width:100%;border-collapse:collapse;margin:16px 0;\">\n<tr style=\"background:#f8f9fa;\"><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Score</td><td style=\"padding:10px;border:1px solid #dee2e6;color:#e74c3c;font-weight:bold;\">{{ $json.Score }}/100</td></tr>\n<tr><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Contact</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.Prenom }} {{ $json.Nom }}</td></tr>\n<tr style=\"background:#f8f9fa;\"><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Email</td><td style=\"padding:10px;border:1px solid #dee2e6;\"><a href=\"mailto:{{ $json.Email }}\">{{ $json.Email }}</a></td></tr>\n<tr><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Entreprise</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.Entreprise }}</td></tr>\n<tr style=\"background:#f8f9fa;\"><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Segment</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.Segment }}</td></tr>\n<tr><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Intention</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.Intention }}</td></tr>\n<tr style=\"background:#f8f9fa;\"><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Source</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.Source }}</td></tr>\n<tr><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Secteur</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.Secteur }}</td></tr>\n<tr style=\"background:#f8f9fa;\"><td style=\"padding:10px;font-weight:bold;border:1px solid #dee2e6;\">Taille</td><td style=\"padding:10px;border:1px solid #dee2e6;\">{{ $json.TailleEntreprise }}</td></tr>\n</table>\n<h3>Resume IA :</h3>\n<p style=\"background:#fff3cd;padding:15px;border-radius:5px;\">{{ $json.Resume }}</p>\n<h3>Message du lead :</h3>\n<blockquote style=\"background:#f8f9fa;padding:15px;border-left:4px solid #007bff;\">{{ $json.Message }}</blockquote>\n<p style=\"color:#6c757d;font-size:12px;margin-top:20px;\">Qualifie automatiquement par Lead Scoring IA - n8n</p>\n</div>",
+        "options": {}
+      },
+      "id": "gmail-hot-lead",
+      "name": "Email Commercial Senior",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3200,
+        320
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "createTask",
+        "additionalFields": {
+          "body": "=URGENT - Contacter {{ $json.Prenom }} {{ $json.Nom }} ({{ $json.Entreprise }})\n\nScore: {{ $json.Score }}/100\nEmail: {{ $json.Email }}\nIntention: {{ $json.Intention }}\n\nResume IA: {{ $json.Resume }}\n\nMessage original: {{ $json.Message }}",
+          "subject": "=🔥 Appeler {{ $json.Prenom }} {{ $json.Nom }} - Score {{ $json.Score }}",
+          "status": "NOT_STARTED",
+          "priority": "HIGH"
+        }
+      },
+      "id": "hubspot-task",
+      "name": "Creer Tache Urgente HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        460
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "name": "HubSpot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "Bienvenue {{ $json.Prenom }} - Decouvrez comment nous pouvons vous aider",
+        "message": "<div style=\"font-family:Arial,sans-serif;max-width:600px;\">\n<p>Bonjour {{ $json.Prenom }},</p>\n<p>Merci pour votre interet ! Nous avons bien recu votre demande et nous sommes ravis de vous accompagner.</p>\n<p>Chez nous, nous aidons les entreprises comme <strong>{{ $json.Entreprise }}</strong> a atteindre leurs objectifs grace a des solutions adaptees.</p>\n<p><strong>Voici ce que nous pouvons faire pour vous :</strong></p>\n<ul>\n<li>Analyse personnalisee de vos besoins</li>\n<li>Solutions sur mesure pour votre secteur</li>\n<li>Accompagnement de A a Z</li>\n</ul>\n<p>N'hesitez pas a repondre a cet email si vous avez des questions.</p>\n<p>Cordialement,<br><strong>L'equipe commerciale</strong></p>\n</div>",
+        "options": {}
+      },
+      "id": "nurturing-email-1",
+      "name": "Email 1 - Bienvenue",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2940,
+        620
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "days"
+      },
+      "id": "wait-3-days",
+      "name": "Attendre 3 jours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3200,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Router selon Score').first().json.Email }}",
+        "subject": "{{ $('Router selon Score').first().json.Prenom }}, 3 raisons de nous choisir",
+        "message": "<div style=\"font-family:Arial,sans-serif;max-width:600px;\">\n<p>Bonjour {{ $('Router selon Score').first().json.Prenom }},</p>\n<p>Suite a notre premier email, nous voulions partager avec vous nos principaux atouts :</p>\n<h3>1. Expertise prouvee</h3>\n<p>Plus de X annees d'experience dans votre secteur avec des resultats concrets.</p>\n<h3>2. Approche personnalisee</h3>\n<p>Chaque entreprise est unique. Nous adaptons nos solutions a vos besoins specifiques.</p>\n<h3>3. Support dedié</h3>\n<p>Un interlocuteur unique qui vous accompagne tout au long du projet.</p>\n<p><strong>Envie d'en savoir plus ?</strong> Repondez simplement a cet email.</p>\n<p>Cordialement,<br><strong>L'equipe commerciale</strong></p>\n</div>",
+        "options": {}
+      },
+      "id": "nurturing-email-2",
+      "name": "Email 2 - Proposition valeur",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3440,
+        620
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 4,
+        "unit": "days"
+      },
+      "id": "wait-4-days",
+      "name": "Attendre 4 jours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3680,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Router selon Score').first().json.Email }}",
+        "subject": "{{ $('Router selon Score').first().json.Prenom }}, decouvrez comment {{ $('Router selon Score').first().json.Entreprise }} peut en beneficier",
+        "message": "<div style=\"font-family:Arial,sans-serif;max-width:600px;\">\n<p>Bonjour {{ $('Router selon Score').first().json.Prenom }},</p>\n<p>Nous travaillons avec de nombreuses entreprises similaires a <strong>{{ $('Router selon Score').first().json.Entreprise }}</strong> et les resultats parlent d'eux-memes :</p>\n<div style=\"background:#f0f7ff;padding:20px;border-radius:8px;margin:16px 0;\">\n<p><strong>Cas client type :</strong></p>\n<ul>\n<li>Reduction de 40% des couts operationnels</li>\n<li>Gain de productivite de 25%</li>\n<li>ROI positif des les 3 premiers mois</li>\n</ul>\n</div>\n<p>Nous serions ravis de vous montrer comment obtenir des resultats similaires pour {{ $('Router selon Score').first().json.Entreprise }}.</p>\n<p><strong>Un appel de 15 minutes suffit.</strong> Repondez a cet email pour planifier un creneau.</p>\n<p>Cordialement,<br><strong>L'equipe commerciale</strong></p>\n</div>",
+        "options": {}
+      },
+      "id": "nurturing-email-3",
+      "name": "Email 3 - Cas client",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3920,
+        620
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "wait-7-days",
+      "name": "Attendre 7 jours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4160,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Router selon Score').first().json.Email }}",
+        "subject": "Derniere chance {{ $('Router selon Score').first().json.Prenom }} - Offre speciale pour {{ $('Router selon Score').first().json.Entreprise }}",
+        "message": "<div style=\"font-family:Arial,sans-serif;max-width:600px;\">\n<p>Bonjour {{ $('Router selon Score').first().json.Prenom }},</p>\n<p>Cela fait maintenant deux semaines que nous echangeons. Nous ne voulons pas etre intrusifs, mais nous pensons sincerement pouvoir aider <strong>{{ $('Router selon Score').first().json.Entreprise }}</strong>.</p>\n<div style=\"background:#fff3cd;padding:20px;border-radius:8px;margin:16px 0;border:1px solid #ffc107;\">\n<p><strong>Offre speciale :</strong> Beneficiez d'un audit gratuit et sans engagement de vos besoins.</p>\n</div>\n<p>Si ce n'est pas le bon moment, pas de souci. Nous restons a votre disposition quand vous serez pret.</p>\n<p>Cordialement,<br><strong>L'equipe commerciale</strong></p>\n</div>",
+        "options": {}
+      },
+      "id": "nurturing-email-4",
+      "name": "Email 4 - Offre finale",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4400,
+        620
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Taguer comme \"Newsletter only\" - pas d'action commerciale\nconst data = $input.first().json;\nreturn [{\n  json: {\n    action: 'NEWSLETTER_ONLY',\n    email: data.Email,\n    prenom: data.Prenom,\n    nom: data.Nom,\n    entreprise: data.Entreprise,\n    score: data.Score,\n    segment: data.Segment,\n    date: new Date().toISOString(),\n    note: 'Lead a faible score. Ajoute a la newsletter. Pas d action commerciale.'\n  }\n}];"
+      },
+      "id": "newsletter-tag",
+      "name": "Taguer Newsletter Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2940,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Lead Scoring IA - Vue d'ensemble\n\n**Objectif:** Qualifier automatiquement chaque lead entrant avec l'IA et le router vers la bonne action commerciale.\n\n**Flux complet :**\n1. **Capture** : Webhook (formulaire) + IMAP (emails)\n2. **Enrichissement** : Clearbit API (avec fallback)\n3. **Scoring IA** : OpenAI gpt-4o-mini (score 0-100)\n4. **CRM** : HubSpot (create/update avec score + tags)\n5. **Routing intelligent :**\n   - Spam detecte -> Exclusion\n   - Score > 80 -> Slack + Email + Tache urgente\n   - Score 50-80 -> Sequence nurturing (4 emails / 14 jours)\n   - Score < 50 -> Newsletter uniquement\n\n**Credentials requises :**\n- Clearbit API (Header Auth: Authorization: Bearer sk_xxx)\n- OpenAI API\n- HubSpot API\n- Slack API\n- Gmail OAuth2\n- IMAP (serveur email entrant)\n\n**Proprietes custom HubSpot a creer :**\nlead_score, lead_segment, lead_intention, lead_categorie, lead_resume_ia",
+        "width": 520,
+        "height": 600,
+        "color": 4
+      },
+      "id": "note-overview",
+      "name": "Note - Vue d'ensemble",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ETAPE 1 : Capture & Normalisation\n\n**2 triggers paralleles :**\n- Webhook POST /lead-scoring (formulaires, API, integrations)\n- IMAP Email (emails entrants directs)\n\nChaque source est normalisee dans un format commun :\n{Prenom, Nom, Email, Entreprise, Message, Source}\n\n**Gestion erreurs :** try/catch dans les 2 normaliseurs",
+        "width": 460,
+        "height": 230,
+        "color": 2
+      },
+      "id": "note-capture",
+      "name": "Note - Capture",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ETAPE 2 : Enrichissement & Scoring\n\n**Clearbit** enrichit le lead (secteur, taille, fonction, LinkedIn).\nSi Clearbit echoue -> fallback avec donnees brutes (pas de blocage).\n\n**OpenAI** analyse le lead enrichi et retourne :\n- Score 0-100\n- Segment (PME/Enterprise)\n- Intention (achat/info/spam)\n- Resume en 1 phrase\n\n**Format:** JSON garanti (responseFormat: json_object)",
+        "width": 520,
+        "height": 250,
+        "color": 5
+      },
+      "id": "note-enrichment",
+      "name": "Note - Enrichissement & Scoring",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ETAPE 3 : CRM HubSpot\n\nRecherche le contact par email.\n- Si existe -> Mise a jour avec score + tags\n- Si nouveau -> Creation avec toutes les infos\n\n**Proprietes custom :** lead_score, lead_segment, lead_intention, lead_categorie, lead_resume_ia",
+        "width": 400,
+        "height": 200,
+        "color": 3
+      },
+      "id": "note-crm",
+      "name": "Note - CRM",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ETAPE 4 : Routing & Actions\n\n**Spam** -> Exclusion + log (pas d'action)\n\n**Hot Lead (>80)** -> 3 actions paralleles :\n- Slack #leads-chauds\n- Email au commercial senior\n- Tache urgente HubSpot\n\n**Nurturing (50-80)** -> Sequence 4 emails :\n- J+0 : Bienvenue\n- J+3 : Proposition de valeur\n- J+7 : Cas client\n- J+14 : Offre finale\n\n**Newsletter (<50)** -> Tag seulement, pas d'action commerciale",
+        "width": 520,
+        "height": 320,
+        "color": 6
+      },
+      "id": "note-routing",
+      "name": "Note - Routing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Lead Entrant": {
+      "main": [
+        [
+          {
+            "node": "Normaliser Donnees Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Repondre 202 Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Entrant (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Normaliser Donnees Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser Donnees Webhook": {
+      "main": [
+        [
+          {
+            "node": "Enrichir via Clearbit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser Donnees Email": {
+      "main": [
+        [
+          {
+            "node": "Enrichir via Clearbit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrichir via Clearbit": {
+      "main": [
+        [
+          {
+            "node": "Traiter Enrichissement (+ Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traiter Enrichissement (+ Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Scoring IA (OpenAI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scoring IA (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "Extraire Score et Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraire Score et Tags": {
+      "main": [
+        [
+          {
+            "node": "Chercher Contact HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chercher Contact HubSpot": {
+      "main": [
+        [
+          {
+            "node": "Contact Existe dans HubSpot ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Existe dans HubSpot ?": {
+      "main": [
+        [
+          {
+            "node": "Mettre a Jour Contact HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Creer Contact HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mettre a Jour Contact HubSpot": {
+      "main": [
+        [
+          {
+            "node": "Preparer Routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Creer Contact HubSpot": {
+      "main": [
+        [
+          {
+            "node": "Preparer Routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparer Routing": {
+      "main": [
+        [
+          {
+            "node": "Router selon Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router selon Score": {
+      "main": [
+        [
+          {
+            "node": "Exclure Spam (Log)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notification Slack Hot Lead",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Commercial Senior",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Creer Tache Urgente HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email 1 - Bienvenue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Taguer Newsletter Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email 1 - Bienvenue": {
+      "main": [
+        [
+          {
+            "node": "Attendre 3 jours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendre 3 jours": {
+      "main": [
+        [
+          {
+            "node": "Email 2 - Proposition valeur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email 2 - Proposition valeur": {
+      "main": [
+        [
+          {
+            "node": "Attendre 4 jours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendre 4 jours": {
+      "main": [
+        [
+          {
+            "node": "Email 3 - Cas client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email 3 - Cas client": {
+      "main": [
+        [
+          {
+            "node": "Attendre 7 jours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendre 7 jours": {
+      "main": [
+        [
+          {
+            "node": "Email 4 - Offre finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "pinData": null,
+  "tags": []
+}
