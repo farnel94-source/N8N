@@ -1,0 +1,492 @@
+{
+  "updatedAt": "2026-02-08T18:00:43.548Z",
+  "createdAt": "2026-01-31T09:03:11.873Z",
+  "id": "bkXj84ZX0rpeCPDL",
+  "name": "RAG_Picone",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1l_-jWPc2jqMNLVeykmScvF66iGyPbXNE",
+          "mode": "list",
+          "cachedResultName": "Picone",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1l_-jWPc2jqMNLVeykmScvF66iGyPbXNE"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -528,
+        -192
+      ],
+      "id": "4e39fd62-db03-47ee-ab6e-e4aed1a3a230",
+      "name": "Google Drive Trigger",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -352,
+        -192
+      ],
+      "id": "ccd908d4-436d-4a5b-ab6d-244a5516503b",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "udemy",
+          "mode": "list",
+          "cachedResultName": "udemy"
+        },
+        "options": {
+          "pineconeNamespace": "=udemy_n8n( {{ $json.originalFilename }} )"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        -96,
+        -192
+      ],
+      "id": "ebdd45ea-b2a1-45fc-9cc8-3f6958f5cf4f",
+      "name": "Pinecone Vector Store",
+      "credentials": {
+        "pineconeApi": {
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -176,
+        0
+      ],
+      "id": "2d85aa44-d482-4188-8f68-7028311dc040",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chunkOverlap": 50,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        128,
+        176
+      ],
+      "id": "45f4d68f-d71d-4a21-a80b-f5671e110c83",
+      "name": "Recursive Character Text Splitter"
+    },
+    {
+      "parameters": {
+        "dataType": "binary",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "Appel",
+                "value": "={{ $json.name }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        16
+      ],
+      "id": "4b1d87f2-53af-441f-a95b-badf02de03cc",
+      "name": "Default Data Loader1"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "tu es un agent qui va regarder dans picone et répondre aux question sur IOS 18\n\nutilise le tool pinecone vectore pour répondre aux questions des utilisateurs"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        800,
+        -352
+      ],
+      "id": "b6a75374-84ea-4a98-aedf-606e13a0b3c2",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "public": true,
+        "options": {
+          "title": "Hi folks! 👋"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        560,
+        -352
+      ],
+      "id": "27351f9d-77d9-4e98-84d3-c1edf4f06b03",
+      "name": "When chat message received",
+      "webhookId": "107e7a5a-70e4-4add-86c8-a43fb0e24a9f"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        -80
+      ],
+      "id": "299e8980-cbc2-4647-a2cd-428aa03d8757",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        864,
+        -96
+      ],
+      "id": "954cbbd3-0ff6-434d-8983-6ee05dc3e452",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "description": "c'est des ducuement qui sera utiliser pour par un agent pour répondre a des utilisateur sur IOS 18"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        -240
+      ],
+      "id": "2974b5a3-bf0c-4061-aaed-53252060214c",
+      "name": "Answer questions with a vector store"
+    },
+    {
+      "parameters": {
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "demon8n",
+          "mode": "list",
+          "cachedResultName": "demon8n"
+        },
+        "options": {
+          "pineconeNamespace": "udemy_n8n( iOS_18_All_New_Features_Sept_2024+(1).pdf )"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        1120,
+        -32
+      ],
+      "id": "04ba5a1c-6de9-45ab-aa66-7b0d3102b89f",
+      "name": "Pinecone Vector Store2",
+      "credentials": {
+        "pineconeApi": {
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1440,
+        -80
+      ],
+      "id": "77289a6c-07a0-409b-852d-da4812fb1a37",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1184,
+        176
+      ],
+      "id": "b8050bef-deb4-46bc-937d-41410f66575f",
+      "name": "Embeddings OpenAI1",
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## RAG Picone - Vue d'ensemble\n\n**Objectif :** Chatbot IA qui repond aux questions en se basant sur vos documents Google Drive.\n\n**2 flux :**\n1. **Ingestion** : Google Drive -> Decoupe en chunks -> Embeddings OpenAI -> Stockage Pinecone\n2. **Chat** : Question utilisateur -> AI Agent cherche dans Pinecone -> Repond avec contexte\n\n**Stack technique :**\n- OpenAI (embeddings + chat)\n- Pinecone (base vectorielle)\n- Google Drive (source documents)\n- Buffer Memory (historique conversation)\n\n**Credentials requises :**\n- Google Drive OAuth2\n- OpenAI API\n- Pinecone API",
+        "width": 440,
+        "height": 420,
+        "color": 4
+      },
+      "id": "note-overview",
+      "name": "Note - Vue d'ensemble",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -780,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## FLUX 1 : Ingestion de documents\n\n1. **Google Drive Trigger** : detecte les nouveaux fichiers / modifications\n2. **Download file** : telecharge le contenu du fichier\n3. **Default Data Loader** : charge le document brut\n4. **Recursive Text Splitter** : decoupe en chunks (morceaux) pour un traitement optimal\n5. **Embeddings OpenAI** : transforme chaque chunk en vecteur numerique\n6. **Pinecone Vector Store** : stocke les vecteurs pour recherche semantique\n\n**Resultat :** Chaque document est indexe et pret a etre interroge.",
+        "width": 680,
+        "height": 260,
+        "color": 2
+      },
+      "id": "note-ingestion",
+      "name": "Note - Ingestion",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## FLUX 2 : Chat avec les documents\n\n1. **Chat Trigger** : recoit la question de l'utilisateur\n2. **AI Agent** : orchestre la reponse avec :\n   - **OpenAI Chat Model** : genere les reponses en langage naturel\n   - **Simple Memory** : garde l'historique de conversation (contexte)\n   - **Vector Store Tool** : cherche les passages pertinents dans Pinecone\n3. **Pinecone Vector Store 2** + **Embeddings OpenAI 1** : transforme la question en vecteur et cherche les documents similaires\n4. **OpenAI Chat Model 1** : utilise par le tool pour reformuler les resultats\n\n**Resultat :** L'agent repond en citant les documents source.",
+        "width": 780,
+        "height": 300,
+        "color": 5
+      },
+      "id": "note-chat",
+      "name": "Note - Chat",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        500,
+        -620
+      ]
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader1",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader1": {
+      "ai_document": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer questions with a vector store": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone Vector Store2": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store2",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "tags": []
+}
