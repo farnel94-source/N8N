@@ -1,0 +1,21 @@
+# Environment variables
+.env
+.env.local
+
+# MCP config (contains API keys)
+.mcp.json
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+.claude/

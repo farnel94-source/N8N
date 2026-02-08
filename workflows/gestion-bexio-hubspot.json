@@ -1,0 +1,478 @@
+{
+  "name": "Gestion Bexio-HubSpot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-polling",
+      "name": "Vérification Toutes les 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 304]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bexio.com/2.0/contact",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "bexioApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "order_by", "value": "updated_at" },
+            { "name": "order_dir", "value": "DESC" },
+            { "name": "limit", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bexio-get-contacts",
+      "name": "Récupérer Contacts Bexio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [464, 208],
+      "credentials": {
+        "bexioApi": { "id": "bexio_credentials", "name": "Bexio API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtrer contacts modifiés dans les 15 dernières minutes\nconst fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);\n\nconst recentContacts = $input.all().filter(item => {\n  const updatedAt = new Date(item.json.updated_at);\n  return updatedAt > fifteenMinutesAgo;\n});\n\nreturn recentContacts;"
+      },
+      "id": "filter-recent-contacts",
+      "name": "Filtrer Contacts Récents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [688, 208]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "contactId": {
+          "__rl": true,
+          "value": "={{ $json.email }}",
+          "mode": "email"
+        },
+        "additionalFields": {}
+      },
+      "id": "hubspot-check-contact",
+      "name": "Vérifier Contact HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [912, 208],
+      "credentials": {
+        "hubspotApi": { "id": "hubspot_credentials", "name": "HubSpot Account" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-contact-exists",
+      "name": "Contact Existe ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1120, 208]
+    },
+    {
+      "parameters": {
+        "email": "={{ $('Filtrer Contacts Récents').item.json.email }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "bexio_id",
+                "value": "={{ $('Filtrer Contacts Récents').item.json.id }}"
+              }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "id": "hubspot-create-contact",
+      "name": "Créer Contact HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1376, 80],
+      "credentials": {
+        "hubspotApi": { "id": "hubspot_credentials", "name": "HubSpot Account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update"
+      },
+      "id": "hubspot-update-contact",
+      "name": "Mettre à Jour Contact HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1360, 256],
+      "credentials": {
+        "hubspotApi": { "id": "hubspot_credentials", "name": "HubSpot Account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.bexio.com/2.0/kb_invoice",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "bexioApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "order_by", "value": "updated_at" },
+            { "name": "order_dir", "value": "DESC" },
+            { "name": "limit", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bexio-get-invoices",
+      "name": "Récupérer Factures Bexio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [464, 512],
+      "credentials": {
+        "bexioApi": { "id": "bexio_credentials", "name": "Bexio API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtrer factures modifiées dans les 15 dernières minutes\nconst fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);\n\nconst recentInvoices = $input.all().filter(item => {\n  const updatedAt = new Date(item.json.updated_at);\n  return updatedAt > fifteenMinutesAgo;\n});\n\nreturn recentInvoices;"
+      },
+      "id": "filter-recent-invoices",
+      "name": "Filtrer Factures Récentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [688, 512]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kb_item_status_id }}",
+                    "rightValue": "",
+                    "operator": { "type": "number", "operation": "exists" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kb_item_status_id }}",
+                    "rightValue": 9,
+                    "operator": { "type": "number", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true
+            }
+          ]
+        },
+        "options": { "allMatchingOutputs": true }
+      },
+      "id": "switch-invoice-status",
+      "name": "Type de Changement",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [928, 512]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": { "__rl": true, "value": "Factures", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": [
+            { "column": "ID Facture", "fieldValue": "={{ $json.id }}" },
+            { "column": "Numéro", "fieldValue": "={{ $json.document_nr }}" },
+            { "column": "Titre", "fieldValue": "={{ $json.title }}" },
+            { "column": "Statut", "fieldValue": "={{ $json.kb_item_status_id }}" },
+            { "column": "Montant Total", "fieldValue": "={{ $json.total }}" },
+            { "column": "Contact ID", "fieldValue": "={{ $json.contact_id }}" },
+            { "column": "Date Échéance", "fieldValue": "={{ $json.is_valid_until }}" },
+            { "column": "Dernière Modification", "fieldValue": "={{ $json.updated_at }}" }
+          ],
+          "matchingColumns": ["ID Facture"],
+          "schema": [
+            { "id": "ID Facture", "displayName": "ID Facture", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Numéro", "displayName": "Numéro", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Titre", "displayName": "Titre", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Statut", "displayName": "Statut", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Montant Total", "displayName": "Montant Total", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Contact ID", "displayName": "Contact ID", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Date Échéance", "displayName": "Date Échéance", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Dernière Modification", "displayName": "Dernière Modification", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "google-sheets-log",
+      "name": "Logger dans Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1152, 448],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "google_sheets_credentials", "name": "Google Sheets Account" }
+      }
+    },
+    {
+      "parameters": {
+        "subject": "Merci pour votre paiement - Facture {{ $('Type de Changement').item.json.document_nr }}",
+        "message": "<h2>Merci pour votre paiement !</h2>\n<p>Bonjour {{ $json.name_1 }} {{ $json.name_2 }},</p>\n<p>Nous vous confirmons la réception de votre paiement pour la facture <strong>{{ $('Type de Changement').item.json.document_nr }}</strong>.</p>\n<p><strong>Montant payé :</strong> {{ $('Type de Changement').item.json.total }} CHF</p>\n<p>Nous vous remercions pour votre confiance.</p>\n<p>Cordialement,<br>Votre équipe</p>",
+        "options": {}
+      },
+      "id": "email-thank-you",
+      "name": "Email de Remerciement",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1536, 592],
+      "credentials": {
+        "gmailOAuth2": { "id": "gmail_credentials", "name": "Gmail Account" }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "schedule-daily",
+      "name": "Vérification Quotidienne Relances",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 800]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bexio.com/2.0/kb_invoice",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "bexioApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "order_by", "value": "is_valid_until" },
+            { "name": "order_dir", "value": "ASC" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bexio-get-all-invoices",
+      "name": "Récupérer Toutes Factures",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [464, 800],
+      "credentials": {
+        "bexioApi": { "id": "bexio_credentials", "name": "Bexio API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtrer factures impayées depuis 30+ jours\nconst thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);\n\nconst overdueInvoices = $input.all().filter(item => {\n  const dueDate = new Date(item.json.is_valid_until);\n  const statusId = item.json.kb_item_status_id;\n\n  // Statut \"Ouvert\" ou \"En attente\" (vérifier codes dans Bexio)\n  const isUnpaid = [7, 8, 17].includes(statusId);\n  const isOverdue = dueDate < thirtyDaysAgo;\n\n  return isUnpaid && isOverdue;\n});\n\nreturn overdueInvoices;"
+      },
+      "id": "filter-overdue-invoices",
+      "name": "Filtrer Impayées 30+ Jours",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [688, 800]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.bexio.com/2.0/contact/{{ $json.contact_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "bexioApi",
+        "options": {}
+      },
+      "id": "bexio-get-contact-for-reminder",
+      "name": "Récupérer Info Client (Relance)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1104, 864],
+      "credentials": {
+        "bexioApi": { "id": "bexio_credentials", "name": "Bexio API" }
+      }
+    },
+    {
+      "parameters": {
+        "subject": "Rappel - Facture {{ $('Filtrer Impayées 30+ Jours').item.json.document_nr }} en attente",
+        "message": "<h2>Rappel de paiement</h2>\n<p>Bonjour {{ $json.name_1 }} {{ $json.name_2 }},</p>\n<p>Nous vous informons que la facture <strong>{{ $('Filtrer Impayées 30+ Jours').item.json.document_nr }}</strong> est toujours en attente de paiement.</p>\n<p><strong>Montant dû :</strong> {{ $('Filtrer Impayées 30+ Jours').item.json.total }} CHF</p>\n<p><strong>Date d'échéance :</strong> {{ $('Filtrer Impayées 30+ Jours').item.json.is_valid_until }}</p>\n<p>Nous vous prions de bien vouloir régulariser cette situation dans les plus brefs délais.</p>\n<p>Pour toute question, n'hésitez pas à nous contacter.</p>\n<p>Cordialement,<br>Votre équipe</p>",
+        "options": {}
+      },
+      "id": "email-reminder",
+      "name": "Email de Relance",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1408, 928],
+      "credentials": {
+        "gmailOAuth2": { "id": "gmail_credentials", "name": "Gmail Account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.bexio.com/2.0/contact/{{ $json.contact_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "bexioApi",
+        "options": {}
+      },
+      "id": "bexio-get-contact-for-payment",
+      "name": "Récupérer Info Client (Paiement)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1296, 672],
+      "credentials": {
+        "bexioApi": { "id": "bexio_credentials", "name": "Bexio API" }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## FLUX 1 : Synchronisation Contacts Bexio -> HubSpot\n\n**Déclencheur :** Toutes les 15 minutes\n\n**Objectif :** Synchroniser automatiquement les contacts modifiés récemment dans Bexio vers HubSpot.\n\n**Fonctionnement :**\n1. Récupère les 100 derniers contacts modifiés depuis Bexio (API REST)\n2. Filtre uniquement ceux modifiés dans les 15 dernières minutes (Code node)\n3. Pour chaque contact, vérifie s'il existe déjà dans HubSpot (recherche par email)\n4. **Si le contact existe** -> Met à jour ses informations dans HubSpot\n5. **Si le contact n'existe pas** -> Crée un nouveau contact dans HubSpot avec le champ custom `bexio_id`\n\n**Credentials requises :** Bexio API, HubSpot API",
+        "width": 1300,
+        "height": 280
+      },
+      "id": "note-flux-1-contacts",
+      "name": "Note - Flux Contacts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 0]
+    },
+    {
+      "parameters": {
+        "content": "## FLUX 2 : Suivi des Factures Bexio\n\n**Déclencheur :** Toutes les 15 minutes (même trigger que Flux 1)\n\n**Objectif :** Suivre les changements de factures Bexio, les logger, et envoyer un email de remerciement quand une facture est payée.\n\n**Fonctionnement :**\n1. Récupère les 100 dernières factures modifiées depuis Bexio\n2. Filtre celles modifiées dans les 15 dernières minutes\n3. Passe par un Switch (\"Type de Changement\") :\n   - **Sortie 1 (toute facture modifiée)** -> Log dans Google Sheets (ID, numéro, titre, statut, montant, contact, échéance)\n   - **Sortie 2 (statut = 9 = Payée)** -> Récupère les infos du client via Bexio -> Envoie un email de remerciement via Gmail\n\n**Credentials requises :** Bexio API, Google Sheets OAuth2, Gmail OAuth2\n\n**Note :** Remplacer `YOUR_GOOGLE_SHEET_ID` par l'ID réel du Google Sheet",
+        "width": 1300,
+        "height": 300
+      },
+      "id": "note-flux-2-factures",
+      "name": "Note - Flux Factures",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 380]
+    },
+    {
+      "parameters": {
+        "content": "## FLUX 3 : Relances Factures Impayées (30+ jours)\n\n**Déclencheur :** Toutes les 24 heures (trigger quotidien séparé)\n\n**Objectif :** Envoyer automatiquement un email de relance pour les factures impayées depuis plus de 30 jours.\n\n**Fonctionnement :**\n1. Récupère toutes les factures depuis Bexio (triées par date d'échéance ASC)\n2. Filtre les factures avec :\n   - Statut impayé : codes `7` (Ouvert), `8` (En attente), `17`\n   - Date d'échéance dépassée de plus de 30 jours\n3. Pour chaque facture en retard, récupère les infos du client associé via Bexio\n4. Envoie un email de relance professionnel via Gmail avec le montant dû et la date d'échéance\n\n**Credentials requises :** Bexio API, Gmail OAuth2",
+        "width": 1300,
+        "height": 260
+      },
+      "id": "note-flux-3-relances",
+      "name": "Note - Flux Relances",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 700]
+    },
+    {
+      "parameters": {
+        "content": "## Vue d'ensemble : Gestion Bexio-HubSpot\n\n**3 flux automatisés :**\n\n| Flux | Fréquence | Description |\n|------|-----------|-------------|\n| 1. Sync Contacts | 15 min | Bexio -> HubSpot (création/mise à jour) |\n| 2. Suivi Factures | 15 min | Log Google Sheets + Email remerciement si payée |\n| 3. Relances | 24h | Email de relance si impayée > 30 jours |\n\n**Services connectés :** Bexio, HubSpot, Google Sheets, Gmail\n\n**Statut :** Workflow inactif - A activer après configuration des credentials",
+        "width": 560,
+        "height": 300,
+        "color": 4
+      },
+      "id": "note-overview",
+      "name": "Note - Vue d'ensemble",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-380, 200]
+    }
+  ],
+  "connections": {
+    "Vérification Toutes les 15 min": {
+      "main": [
+        [
+          { "node": "Récupérer Contacts Bexio", "type": "main", "index": 0 },
+          { "node": "Récupérer Factures Bexio", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Récupérer Contacts Bexio": {
+      "main": [[{ "node": "Filtrer Contacts Récents", "type": "main", "index": 0 }]]
+    },
+    "Filtrer Contacts Récents": {
+      "main": [[{ "node": "Vérifier Contact HubSpot", "type": "main", "index": 0 }]]
+    },
+    "Vérifier Contact HubSpot": {
+      "main": [[{ "node": "Contact Existe ?", "type": "main", "index": 0 }]]
+    },
+    "Contact Existe ?": {
+      "main": [
+        [{ "node": "Mettre à Jour Contact HubSpot", "type": "main", "index": 0 }],
+        [{ "node": "Créer Contact HubSpot", "type": "main", "index": 0 }]
+      ]
+    },
+    "Récupérer Factures Bexio": {
+      "main": [[{ "node": "Filtrer Factures Récentes", "type": "main", "index": 0 }]]
+    },
+    "Filtrer Factures Récentes": {
+      "main": [[{ "node": "Type de Changement", "type": "main", "index": 0 }]]
+    },
+    "Type de Changement": {
+      "main": [
+        [{ "node": "Logger dans Google Sheets", "type": "main", "index": 0 }],
+        [{ "node": "Récupérer Info Client (Paiement)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Récupérer Info Client (Paiement)": {
+      "main": [[{ "node": "Email de Remerciement", "type": "main", "index": 0 }]]
+    },
+    "Vérification Quotidienne Relances": {
+      "main": [[{ "node": "Récupérer Toutes Factures", "type": "main", "index": 0 }]]
+    },
+    "Récupérer Toutes Factures": {
+      "main": [[{ "node": "Filtrer Impayées 30+ Jours", "type": "main", "index": 0 }]]
+    },
+    "Filtrer Impayées 30+ Jours": {
+      "main": [[{ "node": "Récupérer Info Client (Relance)", "type": "main", "index": 0 }]]
+    },
+    "Récupérer Info Client (Relance)": {
+      "main": [[{ "node": "Email de Relance", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
